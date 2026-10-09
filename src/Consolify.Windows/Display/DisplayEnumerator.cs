@@ -29,14 +29,13 @@ public static class DisplayEnumerator
                 : (double)path.TargetInfo.RefreshRate.Numerator / path.TargetInfo.RefreshRate.Denominator;
 
             var (edid, edidError) = ReadEdid(target.MonitorDevicePath);
+            var connection = MapConnection(path.TargetInfo.OutputTechnology);
 
             displays.Add(new ConnectedDisplay
             {
-                FriendlyName = string.IsNullOrWhiteSpace(target.MonitorFriendlyDeviceName)
-                    ? edid?.MonitorName ?? "Unknown display"
-                    : target.MonitorFriendlyDeviceName,
+                FriendlyName = ChooseName(target.MonitorFriendlyDeviceName, edid, connection),
                 DevicePath = target.MonitorDevicePath,
-                Connection = MapConnection(path.TargetInfo.OutputTechnology),
+                Connection = connection,
                 OutputTechnologyRaw = path.TargetInfo.OutputTechnology,
                 Width = width,
                 Height = height,
@@ -146,6 +145,26 @@ public static class DisplayEnumerator
         {
             return (null, $"Could not read the EDID: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Windows often reports no friendly name for built-in panels, so fall back to the EDID name and then
+    /// to the manufacturer and product code.
+    /// </summary>
+    private static string ChooseName(string? windowsName, EdidInfo? edid, DisplayConnection connection)
+    {
+        if (!string.IsNullOrWhiteSpace(windowsName))
+        {
+            return windowsName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(edid?.MonitorName))
+        {
+            return edid.MonitorName;
+        }
+
+        string prefix = connection == DisplayConnection.Internal ? "Built-in display" : "Display";
+        return edid is null ? prefix : $"{prefix} ({edid.ManufacturerId} 0x{edid.ProductCode:X4})";
     }
 
     private static DisplayConnection MapConnection(uint outputTechnology) => outputTechnology switch
