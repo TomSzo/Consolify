@@ -15,6 +15,12 @@ public sealed record FrameTimeStats
     /// <remarks>Starting value, to be tuned with community measurements.</remarks>
     public const double SpikeFactor = 2.0;
 
+    /// <summary>
+    /// Spikes closer together than this belong to one hitch event (a scene change or a loading burst
+    /// shows up as several slow frames in a row; it is still one hitch to the player).
+    /// </summary>
+    public const double SpikeEventGapMs = 1000.0;
+
     public required int FrameCount { get; init; }
     public required double DurationSeconds { get; init; }
     public required double AverageFps { get; init; }
@@ -24,12 +30,16 @@ public sealed record FrameTimeStats
     public required double MaxMs { get; init; }
     public required int SpikeCount { get; init; }
 
+    /// <summary>Spikes grouped into hitches the player notices (see <see cref="SpikeEventGapMs"/>).</summary>
+    public required int SpikeEventCount { get; init; }
+
     /// <summary>95th percentile of the change between consecutive frame times: frame pacing.</summary>
     public required double PacingP95Ms { get; init; }
 
     public double OnePercentLowFps => P99Ms > 0 ? 1000.0 / P99Ms : 0;
     public double PointOnePercentLowFps => P999Ms > 0 ? 1000.0 / P999Ms : 0;
     public double SpikesPerMinute => DurationSeconds > 0 ? SpikeCount / DurationSeconds * 60.0 : 0;
+    public double SpikeEventsPerMinute => DurationSeconds > 0 ? SpikeEventCount / DurationSeconds * 60.0 : 0;
 
     /// <summary>Computes statistics from frame times in milliseconds, in capture order.</summary>
     /// <exception cref="ArgumentException">There are fewer than two usable frame times.</exception>
@@ -63,8 +73,34 @@ public sealed record FrameTimeStats
             P999Ms = Percentile(sorted, 99.9),
             MaxMs = sorted[^1],
             SpikeCount = times.Count(t => t >= median * SpikeFactor),
+            SpikeEventCount = CountSpikeEvents(times, median * SpikeFactor),
             PacingP95Ms = Percentile(deltas, 95),
         };
+    }
+
+    private static int CountSpikeEvents(double[] times, double threshold)
+    {
+        int events = 0;
+        double clock = 0;
+        double lastSpikeEnd = double.NegativeInfinity;
+        foreach (double t in times)
+        {
+            clock += t;
+            if (t < threshold)
+            {
+                continue;
+            }
+
+            // The spike started when the slow frame began, i.e. t before it ended.
+            if (clock - t - lastSpikeEnd > SpikeEventGapMs)
+            {
+                events++;
+            }
+
+            lastSpikeEnd = clock;
+        }
+
+        return events;
     }
 
     /// <summary>Nearest-rank percentile of an ascending array.</summary>

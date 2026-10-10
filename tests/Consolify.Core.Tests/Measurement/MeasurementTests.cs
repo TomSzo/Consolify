@@ -147,3 +147,42 @@ public class PresentMonCsvTests
         Assert.Throws<InvalidOperationException>(() => CaptureAnalysis.Analyze(PresentMonCsv.Parse(new StringReader(csv))));
     }
 }
+
+public class HitchAndBottleneckTests
+{
+    [Fact]
+    public void Consecutive_slow_frames_are_one_hitch()
+    {
+        var times = Enumerable.Repeat(20.0, 100).ToList();
+        times.InsertRange(50, new[] { 60.0, 55.0, 300.0 });   // one scene change
+        times.AddRange(Enumerable.Repeat(20.0, 200));
+        times.Add(80.0);                                     // a second, separate hitch
+        var stats = FrameTimeStats.From(times);
+        Assert.Equal(4, stats.SpikeCount);
+        Assert.Equal(2, stats.SpikeEventCount);
+    }
+
+    [Theory]
+    [InlineData(22.5, 22.5, BottleneckKind.Gpu)]
+    [InlineData(22.5, 12.0, BottleneckKind.Cpu)]
+    [InlineData(20.0, 17.0, BottleneckKind.Mixed)]
+    public void Classifies_by_gpu_busy_share(double frame, double gpu, BottleneckKind expected) =>
+        Assert.Equal(expected, Bottleneck.Classify(frame, gpu));
+
+    [Fact]
+    public void Unknown_without_gpu_busy() =>
+        Assert.Equal(BottleneckKind.Unknown, Bottleneck.Classify(20, null));
+
+    [Fact]
+    public void Reads_gpu_busy_from_csv()
+    {
+        const string csv = "Application,ProcessID,MsBetweenPresents,MsGPUBusy,MsCPUBusy\n" +
+                           "Game.exe,1,20.0,19.5,8.0\nGame.exe,1,20.0,19.7,NA\nGame.exe,1,20.0,19.9,8.2\n";
+        var frames = PresentMonCsv.Parse(new StringReader(csv));
+        Assert.Equal(19.5, frames[0].MsGpuBusy);
+        Assert.Null(frames[1].MsCpuBusy);
+        var result = CaptureAnalysis.Analyze(frames);
+        Assert.Equal(19.7, result.MedianGpuBusyMs);
+        Assert.Equal(BottleneckKind.Gpu, result.Bottleneck);
+    }
+}

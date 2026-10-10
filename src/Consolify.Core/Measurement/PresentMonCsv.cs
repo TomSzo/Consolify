@@ -19,6 +19,8 @@ public static class PresentMonCsv
     private const string ColDisplayedTime = "DisplayedTime";
     private const string ColFrameType = "FrameType";
     private const string ColPresentMode = "PresentMode";
+    private const string ColGpuBusy = "MsGPUBusy";
+    private const string ColCpuBusy = "MsCPUBusy";
 
     /// <summary>Parses a whole CSV.</summary>
     /// <exception cref="FormatException">A required column is missing.</exception>
@@ -43,6 +45,8 @@ public static class PresentMonCsv
         int displayedTime = index.GetValueOrDefault(ColDisplayedTime, -1);
         int frameType = index.GetValueOrDefault(ColFrameType, -1);
         int presentMode = index.GetValueOrDefault(ColPresentMode, -1);
+        int gpuBusy = index.GetValueOrDefault(ColGpuBusy, -1);
+        int cpuBusy = index.GetValueOrDefault(ColCpuBusy, -1);
 
         var records = new List<FrameRecord>();
         string? line;
@@ -78,7 +82,9 @@ public static class PresentMonCsv
                 MsBetweenDisplayChange: display,
                 Displayed: displayed,
                 FrameType: Cell(cells, frameType),
-                PresentMode: Cell(cells, presentMode)));
+                PresentMode: Cell(cells, presentMode),
+                MsGpuBusy: Cell(cells, gpuBusy) is { } g ? ParseNumber(g) : null,
+                MsCpuBusy: Cell(cells, cpuBusy) is { } c ? ParseNumber(c) : null));
         }
 
         return records;

@@ -18,8 +18,8 @@ internal static class MeasureCommand
     /// </summary>
     private const double CappedFlatnessThreshold = 0.05;
 
-    /// <summary>Spikes per minute above which the game itself is called stuttery. Starting value.</summary>
-    private const double StutterSpikesPerMinute = 6;
+    /// <summary>Hitch events per minute above which the game itself is called stuttery. Starting value.</summary>
+    private const double StutterEventsPerMinute = 4;
 
     public static async Task<int> RunAsync(string[] args)
     {
@@ -110,12 +110,20 @@ internal static class MeasureCommand
         Line("1% low", $"{r.OnePercentLowFps:0.0} FPS  (99th percentile frame time {r.P99Ms:0.0} ms)");
         Line("0.1% low", $"{r.PointOnePercentLowFps:0.0} FPS  (worst frame {r.MaxMs:0.0} ms)");
         Line("Median frame time", $"{r.MedianMs:0.00} ms");
-        Line("Spikes", $"{r.SpikeCount} (>= {FrameTimeStats.SpikeFactor:0}x median), {r.SpikesPerMinute:0.0} per minute");
+        Line("Hitches", $"{r.SpikeEventCount} ({r.SpikeCount} slow frames >= {FrameTimeStats.SpikeFactor:0}x median), {r.SpikeEventsPerMinute:0.0} per minute");
         Line("Pacing (p95 change)", $"{r.PacingP95Ms:0.00} ms between consecutive frames");
         if (result.Display is { } shown)
         {
             Line("On screen 1% low", $"{shown.OnePercentLowFps:0.0} FPS, dropped frames: {result.DroppedFrames}");
         }
+
+        Line("Limited by", result.Bottleneck switch
+        {
+            BottleneckKind.Gpu => $"GPU (busy {result.MedianGpuBusyMs:0.0} of {r.MedianMs:0.0} ms per frame)",
+            BottleneckKind.Cpu => $"CPU or the game itself (GPU busy only {result.MedianGpuBusyMs:0.0} of {r.MedianMs:0.0} ms)",
+            BottleneckKind.Mixed => $"both CPU and GPU near their limit (GPU busy {result.MedianGpuBusyMs:0.0} of {r.MedianMs:0.0} ms)",
+            _ => "unknown (PresentMon reported no GPU busy time)",
+        });
 
         if (result.PresentModes.Count > 0)
         {
@@ -149,10 +157,14 @@ internal static class MeasureCommand
             Line(string.Empty, "not what the game can do. Remove the limiter and measure again.");
         }
 
-        if (r.SpikesPerMinute > StutterSpikesPerMinute)
+        if (r.SpikeEventsPerMinute > StutterEventsPerMinute)
         {
             Line("Stutter", "The game itself hitches often (shader compilation, streaming).");
             Line(string.Empty, "Lowering image quality will not fix that.");
+        }
+        else if (r.SpikeEventCount > 0)
+        {
+            Line("Hitches", $"{r.SpikeEventCount} isolated hitch(es), e.g. scene changes or loading. Not a settings problem.");
         }
 
         var target = FrameTargetPolicy.Decide(r.OnePercentLowFps, vrr, refresh);
@@ -164,6 +176,22 @@ internal static class MeasureCommand
         };
         Line("Result", verdict);
         Line("Rule", $"needs an uncapped 1% low of {target.RequiredOnePercentLow} FPS; measured {r.OnePercentLowFps:0.0}");
+        if (target.Tier != ExperienceTier.Full)
+        {
+            Line("What now", result.Bottleneck switch
+            {
+                BottleneckKind.Gpu => "The GPU is the limit. Lighter graphics settings help - unless they are",
+                BottleneckKind.Cpu => "The CPU is the limit. Lower resolution or upscaling will NOT help;",
+                _ => "Lighter settings may help a little. If they are",
+            });
+            Line(string.Empty, result.Bottleneck switch
+            {
+                BottleneckKind.Gpu => "already at their lowest: then this hardware is the limit for this game.",
+                BottleneckKind.Cpu => "only CPU-heavy settings (crowds, physics, view distance) or a faster CPU will.",
+                _ => "already at their lowest, this hardware is the limit for this game.",
+            });
+        }
+
         Line("Capture file", csvPath);
         return 0;
     }

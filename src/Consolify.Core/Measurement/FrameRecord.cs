@@ -11,6 +11,8 @@ namespace Consolify.Core.Measurement;
 /// <param name="Displayed">Whether the frame reached the screen at all.</param>
 /// <param name="FrameType">Application-rendered or generated (frame generation), when PresentMon knows it.</param>
 /// <param name="PresentMode">How the frame was presented (e.g. "Hardware: Independent Flip").</param>
+/// <param name="MsGpuBusy">Time the GPU spent working on this frame, or null if PresentMon did not report it.</param>
+/// <param name="MsCpuBusy">Time the CPU spent on this frame before presenting it, or null if unknown.</param>
 public sealed record FrameRecord(
     string Application,
     int ProcessId,
@@ -18,7 +20,9 @@ public sealed record FrameRecord(
     double? MsBetweenDisplayChange,
     bool Displayed,
     string? FrameType,
-    string? PresentMode)
+    string? PresentMode,
+    double? MsGpuBusy = null,
+    double? MsCpuBusy = null)
 {
     /// <summary>Whether a driver or SDK generated this frame instead of the game rendering it.</summary>
     public bool IsGenerated =>

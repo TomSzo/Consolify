@@ -10,14 +10,21 @@ namespace Consolify.Core.Measurement;
 /// <param name="DroppedFrames">Frames that never reached the screen.</param>
 /// <param name="GeneratedFrames">Frames made by frame generation rather than rendered by the game.</param>
 /// <param name="PresentModes">Present modes seen, most frequent first.</param>
+/// <param name="MedianGpuBusyMs">Median GPU busy time per frame, or null if PresentMon did not report it.</param>
+/// <param name="MedianCpuBusyMs">Median CPU busy time per frame, or null if unknown.</param>
 public sealed record CaptureResult(
     string Application,
     FrameTimeStats Render,
     FrameTimeStats? Display,
     int DroppedFrames,
     int GeneratedFrames,
-    IReadOnlyList<string> PresentModes)
+    IReadOnlyList<string> PresentModes,
+    double? MedianGpuBusyMs = null,
+    double? MedianCpuBusyMs = null)
 {
+    /// <summary>Which part of the machine holds the frame rate back.</summary>
+    public BottleneckKind Bottleneck => Measurement.Bottleneck.Classify(Render.MedianMs, MedianGpuBusyMs);
+
     /// <summary>Generated frames make the capture useless for deciding a cap on real frames.</summary>
     public bool HasFrameGeneration => GeneratedFrames > 0;
 }
@@ -83,6 +90,14 @@ public static class CaptureAnalysis
             Display: display,
             DroppedFrames: gameFrames.Count(f => !f.Displayed),
             GeneratedFrames: gameFrames.Count(f => f.IsGenerated),
-            PresentModes: modes);
+            PresentModes: modes,
+            MedianGpuBusyMs: Median(gameFrames.Select(f => f.MsGpuBusy)),
+            MedianCpuBusyMs: Median(gameFrames.Select(f => f.MsCpuBusy)));
+    }
+
+    private static double? Median(IEnumerable<double?> values)
+    {
+        var known = values.Where(v => v is > 0).Select(v => v!.Value).Order().ToArray();
+        return known.Length == 0 ? null : FrameTimeStats.Percentile(known, 50);
     }
 }
