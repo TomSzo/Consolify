@@ -9,17 +9,27 @@ using Consolify.Core.Pacing;
 using Consolify.Core.Viewing;
 using Consolify.Windows.Display;
 
-// consolify-probe: prints what Consolify detects about this PC's displays. It only reads; it changes nothing.
+// consolify-probe: prints what Consolify detects and measures. It only reads; it changes nothing.
 //
 // Usage:
-//   consolify-probe                  human-readable report
-//   consolify-probe --json           machine-readable report
+//   consolify-probe                  display report (human-readable)
+//   consolify-probe --json           display report (machine-readable)
 //   consolify-probe --distance 250   assume this viewing distance (cm) for every display
+//   consolify-probe measure [--seconds 60] [--delay 10] [--app Game.exe]
+//                                    record a game with PresentMon and print the decision
+//   consolify-probe analyze capture.csv [--app Game.exe]
+//                                    analyse an existing PresentMon capture
 
 if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
 {
     Console.Error.WriteLine("consolify-probe needs Windows 10 2004 or newer.");
     return 1;
+}
+
+if (args.Length > 0 && (args[0].Equals("measure", StringComparison.OrdinalIgnoreCase)
+    || args[0].Equals("analyze", StringComparison.OrdinalIgnoreCase)))
+{
+    return await MeasureCommand.RunAsync(args);
 }
 
 bool json = args.Contains("--json", StringComparer.OrdinalIgnoreCase);

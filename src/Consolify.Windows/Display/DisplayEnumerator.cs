@@ -23,7 +23,7 @@ public static class DisplayEnumerator
         foreach (var path in paths)
         {
             var target = GetTargetName(path.TargetInfo);
-            var (width, height) = GetSourceResolution(path.SourceInfo, modes);
+            var (width, height, isPrimary) = GetSourceMode(path.SourceInfo, modes);
             double refresh = path.TargetInfo.RefreshRate.Denominator == 0
                 ? 0
                 : (double)path.TargetInfo.RefreshRate.Numerator / path.TargetInfo.RefreshRate.Denominator;
@@ -40,6 +40,7 @@ public static class DisplayEnumerator
                 Width = width,
                 Height = height,
                 RefreshHz = Math.Round(refresh, 3),
+                IsPrimary = isPrimary,
                 Edid = edid,
                 EdidError = edidError,
             });
@@ -98,15 +99,16 @@ public static class DisplayEnumerator
             : request with { MonitorFriendlyDeviceName = string.Empty, MonitorDevicePath = string.Empty };
     }
 
-    private static (int Width, int Height) GetSourceResolution(PathSourceInfo source, ModeInfo[] modes)
+    private static (int Width, int Height, bool IsPrimary) GetSourceMode(PathSourceInfo source, ModeInfo[] modes)
     {
         if (source.ModeInfoIdx < modes.Length && modes[source.ModeInfoIdx].InfoType == ModeInfoTypeSource)
         {
             var mode = modes[source.ModeInfoIdx];
-            return ((int)mode.SourceWidth, (int)mode.SourceHeight);
+            bool primary = mode.SourcePositionX == 0 && mode.SourcePositionY == 0;
+            return ((int)mode.SourceWidth, (int)mode.SourceHeight, primary);
         }
 
-        return (0, 0);
+        return (0, 0, false);
     }
 
     /// <summary>

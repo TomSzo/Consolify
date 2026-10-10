@@ -27,6 +27,9 @@ public sealed record ConnectedDisplay
     public required int Width { get; init; }
     public required int Height { get; init; }
     public required double RefreshHz { get; init; }
+
+    /// <summary>Whether this is the primary display (its desktop starts at 0,0).</summary>
+    public required bool IsPrimary { get; init; }
     public EdidInfo? Edid { get; init; }
     public string? EdidError { get; init; }
 
