@@ -63,9 +63,34 @@ level. Any headroom goes into image quality.
 Frame generation is only offered **after** a real, stable 60, and only with the player's consent —
 together with what it adds and how much latency it costs.
 
-**Stability depends on the sync technology** (FreeSync, G-Sync, VESA Adaptive-Sync, HDMI 2.1 VRR,
-fixed refresh + V-Sync). With VRR, the 1% low must stay a few frames above the display's VRR minimum.
-Without VRR, the measure is missed vblanks at the target cadence.
+**Frame times matter, not the average.** Like a console, Consolify caps the frame rate (60 / 40 / 30).
+With a cap the average FPS always sits near the cap — even while the game stutters — so the average is
+informational only. Decisions are made on frame times:
+
+| Metric | What it shows | Role |
+|---|---|---|
+| 1% low (99th percentile frame time) | 99% of frames finish within this time | **main condition** |
+| Missed refreshes (without VRR) | what the eye sees on a fixed-refresh display | **main condition without VRR** |
+| 0.1% low and spike count (≥ 2× the median) | one-off hitches: shader compilation, loading | stutter warning |
+| Change between consecutive frames | frame pacing | pacing warning |
+| Average FPS | how many frames arrive in total | informational only |
+
+If a game is full of spikes, Consolify does not lower the image quality — it tells the player the game
+itself stutters. Spike and pacing thresholds are starting values, to be tuned with real measurements.
+
+**A target is a cap, not an average.** "Stable 30" means 99% of frames finish within 33.3 ms. An
+*average* of 30 can hide a 1% low of 20 — that is not acceptable.
+
+| Target | Hard floor (1% low) |
+|---|---|
+| Stable 60 | with VRR: VRR minimum + 3 (51 on a 48–120 Hz panel); without VRR: 60 |
+| Stable 40 | 40 |
+| Stable 30 | 30 |
+
+With VRR, small dips below 60 are absorbed by the display, so the floor is the VRR minimum plus a margin.
+At 40 and 30 there is no such slack: every dip is visible, and these targets usually sit below the VRR
+window, where low framerate compensation (frame doubling) takes over. Without VRR, frames must also land
+on the refresh cadence with almost no missed refreshes.
 
 **Viewing distance matters.** Consolify uses *pixels per degree* (PPD) — how many pixels fall into one
 degree of your field of view. A 65" 4K TV at 3 m is ~140 PPD: aggressive upscaling is invisible there.
