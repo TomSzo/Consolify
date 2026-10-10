@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Consolify.Core.Display;
+using Consolify.Core.Pacing;
 using Consolify.Core.Viewing;
 using Consolify.Windows.Display;
 
@@ -103,8 +104,8 @@ static DisplayReport BuildReport(ConnectedDisplay display, double? distanceOverr
         VrrRangesFound: edid?.VrrRanges.Select(r => $"{r.MinHz}-{(r.MaxHz == 0 ? "?" : r.MaxHz)} Hz ({r.Source})").ToList(),
         EffectiveVrr: vrr is null ? null : $"{vrr.MinHz}-{vrr.MaxHz} Hz ({vrr.Source})",
         LikelyLfc: vrr?.LikelySupportsLfc,
-        OnePercentLowFloor: vrr?.OnePercentLowFloor,
-        RecommendedFrameCap: vrr?.RecommendedFrameCap,
+        FullExperienceFloor: FrameTargetPolicy.FullExperienceFloor(vrr),
+        Locked40Fallback: FrameTargetPolicy.CanShowLocked40(vrr, refresh),
         AssumedDistanceCm: distance,
         PixelsPerDegree: ppd is double p ? Math.Round(p, 1) : null,
         UpscaleCeiling: ppd is double q ? ViewingGeometry.CeilingFor(q) : null,
@@ -131,15 +132,16 @@ static void PrintReport(DisplayReport r)
 
     if (r.EffectiveVrr is null)
     {
-        Line("VRR", "none advertised - fixed refresh rules apply (V-Sync, 60/40/30 cadence)");
+        Line("VRR", "none advertised - fixed refresh: a locked 60 needs an uncapped 1% low of 61");
     }
     else
     {
         Line("VRR (trusted)", r.EffectiveVrr);
         Line("LFC likely", Yes(r.LikelyLfc));
-        Line("1% low floor", $"{r.OnePercentLowFloor} FPS");
-        Line("Frame cap", $"{r.RecommendedFrameCap} FPS");
     }
+
+    Line("Full experience", $"uncapped 1% low >= {r.FullExperienceFloor} FPS, cap 1 FPS below it (max 60)");
+    Line("Locked 40 fallback", r.Locked40Fallback ? "possible (shown as a compromise)" : "not possible on this display");
 
     Line("Viewing distance", $"{r.AssumedDistanceCm} cm (assumed; override with --distance)");
     Line("Pixels per degree", r.PixelsPerDegree is null ? "unknown (no physical size)" : $"{r.PixelsPerDegree} -> upscale ceiling: {r.UpscaleCeiling}");
@@ -172,8 +174,8 @@ internal sealed record DisplayReport(
     IReadOnlyList<string>? VrrRangesFound,
     string? EffectiveVrr,
     bool? LikelyLfc,
-    int? OnePercentLowFloor,
-    int? RecommendedFrameCap,
+    int FullExperienceFloor,
+    bool Locked40Fallback,
     double AssumedDistanceCm,
     double? PixelsPerDegree,
     UpscaleCeiling? UpscaleCeiling,

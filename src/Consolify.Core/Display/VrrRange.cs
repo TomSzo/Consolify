@@ -30,20 +30,11 @@ public sealed record VrrRange(int MinHz, int MaxHz, VrrSource Source)
     /// </summary>
     public const double LfcRatioThreshold = 2.0;
 
-    /// <summary>Safety margin, in frames per second, kept above the VRR minimum.</summary>
-    public const int FloorMarginFps = 3;
-
     /// <summary>Max/min ratio of the window.</summary>
     public double Ratio => MinHz > 0 ? (double)MaxHz / MinHz : 0;
 
     /// <summary>Whether the window is wide enough for low framerate compensation to be likely.</summary>
     public bool LikelySupportsLfc => Ratio >= LfcRatioThreshold;
-
-    /// <summary>The 1% low a game must not fall below to stay comfortably inside the window.</summary>
-    public int OnePercentLowFloor => MinHz + FloorMarginFps;
-
-    /// <summary>Frame cap that keeps the game inside the window and away from V-Sync latency.</summary>
-    public int RecommendedFrameCap => Math.Max(MinHz, MaxHz - FloorMarginFps);
 
     /// <summary>Whether this is a usable, plausible range.</summary>
     public bool IsPlausible => MinHz > 0 && MaxHz > MinHz && MaxHz <= 1000;

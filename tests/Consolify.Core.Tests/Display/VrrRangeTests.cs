@@ -8,13 +8,9 @@ namespace Consolify.Core.Tests.Display;
 public class VrrRangeTests
 {
     [Fact]
-    public void Handheld_panel_48_to_120_keeps_a_floor_and_cap_inside_the_window()
+    public void Wide_window_likely_supports_lfc()
     {
-        var range = new VrrRange(48, 120, VrrSource.MonitorRangeLimits);
-
-        Assert.Equal(51, range.OnePercentLowFloor);
-        Assert.Equal(117, range.RecommendedFrameCap);
-        Assert.True(range.LikelySupportsLfc);
+        Assert.True(new VrrRange(48, 120, VrrSource.MonitorRangeLimits).LikelySupportsLfc);
     }
 
     [Fact]
