@@ -3,6 +3,7 @@
 
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Security.Principal;
@@ -25,9 +26,22 @@ public static class PresentMonRunner
 
     private const int ErrorCancelled = 1223;
 
+    private const int AppModelErrorNoPackage = 15700;
+
+    /// <summary>
+    /// Where Consolify keeps its data. Normally %LOCALAPPDATA%\Consolify. Inside an MSIX-packaged host,
+    /// Windows redirects AppData writes into the package's private store, where an elevated PresentMon
+    /// (which runs outside the package) cannot see them; there a folder in the user profile is used instead.
+    /// </summary>
+    public static string DataDirectory => IsPackagedProcess()
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".consolify")
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Consolify");
+
     /// <summary>Where Consolify keeps downloaded tools.</summary>
-    public static string ToolsDirectory =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Consolify", "tools");
+    public static string ToolsDirectory => Path.Combine(DataDirectory, "tools");
+
+    /// <summary>Where captures are written.</summary>
+    public static string CapturesDirectory => Path.Combine(DataDirectory, "captures");
 
     /// <summary>Returns the path to a verified PresentMon, downloading it first if needed.</summary>
     /// <exception cref="InvalidDataException">The file does not match the pinned checksum.</exception>
@@ -114,6 +128,10 @@ public static class PresentMonRunner
         {
             throw new OperationCanceledException("The administrator prompt was declined, so nothing was recorded.", ex);
         }
+        catch (Win32Exception ex)
+        {
+            throw new InvalidOperationException($"PresentMon could not be started ({presentMonPath}): {ex.Message}", ex);
+        }
 
         if (process is null)
         {
@@ -141,6 +159,17 @@ public static class PresentMonRunner
         byte[] hash = await SHA256.HashDataAsync(stream, cancellationToken);
         return Convert.ToHexString(hash).Equals(Sha256, StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>Whether this process runs with an MSIX package identity (and thus with AppData redirection).</summary>
+    private static bool IsPackagedProcess()
+    {
+        uint length = 0;
+        int result = GetCurrentPackageFullName(ref length, null);
+        return result != AppModelErrorNoPackage;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetCurrentPackageFullName(ref uint packageFullNameLength, char[]? packageFullName);
 
     private static string Quote(string value) => "\"" + value.Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
 }

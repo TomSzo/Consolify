@@ -56,7 +56,7 @@ internal static class MeasureCommand
                 return 1;
             }
 
-            string folder = Path.Combine(Path.GetTempPath(), "Consolify");
+            string folder = PresentMonRunner.CapturesDirectory;
             Directory.CreateDirectory(folder);
             csvPath = Path.Combine(folder, $"capture-{DateTime.Now:yyyyMMdd-HHmmss}.csv");
 
