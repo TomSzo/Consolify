@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Consolify contributors
 
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.Versioning;
 using Consolify.Core.Measurement;
 using Consolify.Core.Pacing;
+using Consolify.Windows.Applying;
 using Consolify.Windows.Display;
 using Consolify.Windows.Measurement;
 
@@ -24,6 +26,10 @@ internal static class MeasureCommand
     public static async Task<int> RunAsync(string[] args)
     {
         string? app = Option(args, "--app");
+        var apply = new ApplyOptions(
+            Enabled: args.Contains("--apply", StringComparer.OrdinalIgnoreCase),
+            AssumeYes: args.Contains("--yes", StringComparer.OrdinalIgnoreCase),
+            GameDir: Option(args, "--game-dir"));
         string csvPath;
 
         if (args[0].Equals("analyze", StringComparison.OrdinalIgnoreCase))
@@ -78,10 +84,29 @@ internal static class MeasureCommand
             }
         }
 
-        return Report(csvPath, app);
+        return Report(csvPath, app, apply);
     }
 
-    private static int Report(string csvPath, string? app)
+    /// <summary>The <c>restore</c> command: puts back the last file Consolify changed for a game.</summary>
+    public static int Restore(string[] args)
+    {
+        string? app = Option(args, "--app");
+        if (app is null)
+        {
+            Console.Error.WriteLine("Usage: consolify-probe restore --app Game.exe");
+            return 2;
+        }
+
+        var restored = OptiScalerFrameCap.Restore(app);
+        Console.WriteLine(restored is null
+            ? $"Nothing to restore for {app}."
+            : $"Restored {restored.OriginalPath} from {restored.BackupPath}. Restart the game for it to take effect.");
+        return restored is null ? 1 : 0;
+    }
+
+    private sealed record ApplyOptions(bool Enabled, bool AssumeYes, string? GameDir);
+
+    private static int Report(string csvPath, string? app, ApplyOptions apply)
     {
         CaptureResult result;
         try
@@ -216,7 +241,92 @@ internal static class MeasureCommand
         }
 
         Line("Capture file", csvPath);
+
+        if (apply.Enabled && target.CapFps is int cap)
+        {
+            ApplyCap(result.Application, cap, apply);
+        }
+
         return 0;
+    }
+
+    private static void ApplyCap(string gameExe, int cap, ApplyOptions apply)
+    {
+        Console.WriteLine();
+        Console.WriteLine("Apply");
+        Console.WriteLine(new string('-', 60));
+
+        string? exePath = apply.GameDir is not null
+            ? Path.Combine(apply.GameDir, gameExe)
+            : FindRunningExe(gameExe);
+        string? ini = exePath is null ? null : OptiScalerFrameCap.FindIni(exePath);
+        if (ini is null)
+        {
+            Line("Skipped", exePath is null
+                ? $"{gameExe} is not running, so its folder is unknown. Add --game-dir with the folder of the exe."
+                : $"No OptiScaler next to {exePath}. Only OptiScaler's limiter is supported so far.");
+            return;
+        }
+
+        double? now = OptiScalerFrameCap.ReadCap(ini);
+        Line("Change", $"OptiScaler frame limit: {(now is null ? "none" : now.Value.ToString("0.#", CultureInfo.InvariantCulture))} -> {cap} FPS");
+        Line("File", ini);
+        if (now is double current && Math.Abs(current - cap) < 0.01)
+        {
+            Line("Result", "Already set. Nothing to do.");
+            return;
+        }
+
+        if (!apply.AssumeYes)
+        {
+            if (Console.IsInputRedirected)
+            {
+                Line("Skipped", "No one to ask. Add --yes to apply without asking.");
+                return;
+            }
+
+            Console.Write("  Apply it? A backup is made first. [y/N] ");
+            if (!(Console.ReadLine()?.Trim().StartsWith('y') ?? false))
+            {
+                Line("Skipped", "Nothing changed.");
+                return;
+            }
+        }
+
+        try
+        {
+            var backup = OptiScalerFrameCap.Apply(ini, cap, gameExe);
+            Line("Done", $"Frame limit set to {cap} FPS. It takes effect the next time the game starts.");
+            Line("Backup", backup.BackupPath);
+            Line("Undo", $"consolify-probe restore --app {gameExe}");
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            Line("Failed", $"Could not write the file: {ex.Message}");
+        }
+    }
+
+    private static string? FindRunningExe(string gameExe)
+    {
+        foreach (var process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(gameExe)))
+        {
+            using (process)
+            {
+                try
+                {
+                    if (process.MainModule?.FileName is { } path)
+                    {
+                        return path;
+                    }
+                }
+                catch (System.ComponentModel.Win32Exception)
+                {
+                    // Not allowed to read this process; try the next one.
+                }
+            }
+        }
+
+        return null;
     }
 
     private static void Line(string label, string value) => Console.WriteLine($"  {label,-20} {value}");
