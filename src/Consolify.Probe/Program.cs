@@ -9,7 +9,7 @@ using Consolify.Core.Pacing;
 using Consolify.Core.Viewing;
 using Consolify.Windows.Display;
 
-// consolify-probe: prints what Consolify detects and measures. It only reads; it changes nothing.
+// consolify-probe: prints what Consolify detects and measures. It changes nothing unless --apply is given.
 //
 // Usage:
 //   consolify-probe                  display report (human-readable)
@@ -19,6 +19,10 @@ using Consolify.Windows.Display;
 //                                    record a game with PresentMon and print the decision
 //   consolify-probe analyze capture.csv [--app Game.exe]
 //                                    analyse an existing PresentMon capture
+//   ... measure|analyze ... --apply [--yes] [--game-dir DIR]
+//                                    also write the frame cap to the game's OptiScaler.ini (after a backup)
+//   consolify-probe restore --app Game.exe
+//                                    put back the last file Consolify changed for that game
 
 if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
 {
@@ -30,6 +34,11 @@ if (args.Length > 0 && (args[0].Equals("measure", StringComparison.OrdinalIgnore
     || args[0].Equals("analyze", StringComparison.OrdinalIgnoreCase)))
 {
     return await MeasureCommand.RunAsync(args);
+}
+
+if (args.Length > 0 && args[0].Equals("restore", StringComparison.OrdinalIgnoreCase))
+{
+    return MeasureCommand.Restore(args);
 }
 
 bool json = args.Contains("--json", StringComparer.OrdinalIgnoreCase);
