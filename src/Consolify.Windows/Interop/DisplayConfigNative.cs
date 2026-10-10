@@ -80,9 +80,11 @@ internal static partial class DisplayConfigNative
         [FieldOffset(4)] public uint Id;
         [FieldOffset(8)] public Luid AdapterId;
 
-        // DISPLAYCONFIG_SOURCE_MODE
+        // DISPLAYCONFIG_SOURCE_MODE: width, height, pixel format, then the desktop position.
         [FieldOffset(16)] public uint SourceWidth;
         [FieldOffset(20)] public uint SourceHeight;
+        [FieldOffset(28)] public int SourcePositionX;
+        [FieldOffset(32)] public int SourcePositionY;
 
         // DISPLAYCONFIG_TARGET_MODE.targetVideoSignalInfo
         [FieldOffset(32)] public Rational TargetVSyncFrequency;
