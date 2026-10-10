@@ -1,0 +1,37 @@
+name: Release
+
+# Push a tag such as v0.1.0 to build the probe as one self-contained exe and publish it as a release.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Test
+        run: dotnet test Consolify.sln -c Release
+      - name: Publish single-file exe
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          dotnet publish src/Consolify.Probe -c Release -r win-x64 --self-contained `
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true -p:DebugType=none -p:Version=$version -o publish
+          $hash = (Get-FileHash publish/consolify-probe.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  consolify-probe.exe" | Set-Content publish/consolify-probe.exe.sha256
+      - name: Create release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create '${{ github.ref_name }}' publish/consolify-probe.exe publish/consolify-probe.exe.sha256 `
+            --title 'Consolify probe ${{ github.ref_name }}' `
+            --notes "Self-contained Windows x64 build of consolify-probe: no .NET or other install needed. Check the download against consolify-probe.exe.sha256. It reads and measures; it changes files only with --apply, after a backup."
