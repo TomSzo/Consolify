@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Diagnostic console tool: prints what Consolify detects about this PC's displays. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <AssemblyName>consolify-probe</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Consolify.Core\Consolify.Core.csproj" />
+    <ProjectReference Include="..\Consolify.Windows\Consolify.Windows.csproj" />
+  </ItemGroup>
+
+</Project>

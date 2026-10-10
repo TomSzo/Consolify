@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Platform-independent core: models, EDID parsing, decision rules. Unit-testable on any OS. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Consolify.Core.Tests" />
+  </ItemGroup>
+
+</Project>
