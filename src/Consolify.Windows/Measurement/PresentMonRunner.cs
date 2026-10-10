@@ -3,7 +3,6 @@
 
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Security.Principal;
@@ -26,16 +25,13 @@ public static class PresentMonRunner
 
     private const int ErrorCancelled = 1223;
 
-    private const int AppModelErrorNoPackage = 15700;
-
     /// <summary>
-    /// Where Consolify keeps its data. Normally %LOCALAPPDATA%\Consolify. Inside an MSIX-packaged host,
-    /// Windows redirects AppData writes into the package's private store, where an elevated PresentMon
-    /// (which runs outside the package) cannot see them; there a folder in the user profile is used instead.
+    /// Where Consolify keeps its data: %USERPROFILE%\.consolify. Not AppData on purpose: when Consolify is
+    /// started from an MSIX-packaged app (or a child of one), Windows silently redirects AppData writes into
+    /// that package's private store, and the elevated PresentMon, which runs outside it, cannot see them.
     /// </summary>
-    public static string DataDirectory => IsPackagedProcess()
-        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".consolify")
-        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Consolify");
+    public static string DataDirectory =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".consolify");
 
     /// <summary>Where Consolify keeps downloaded tools.</summary>
     public static string ToolsDirectory => Path.Combine(DataDirectory, "tools");
@@ -159,17 +155,6 @@ public static class PresentMonRunner
         byte[] hash = await SHA256.HashDataAsync(stream, cancellationToken);
         return Convert.ToHexString(hash).Equals(Sha256, StringComparison.OrdinalIgnoreCase);
     }
-
-    /// <summary>Whether this process runs with an MSIX package identity (and thus with AppData redirection).</summary>
-    private static bool IsPackagedProcess()
-    {
-        uint length = 0;
-        int result = GetCurrentPackageFullName(ref length, null);
-        return result != AppModelErrorNoPackage;
-    }
-
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-    private static extern int GetCurrentPackageFullName(ref uint packageFullNameLength, char[]? packageFullName);
 
     private static string Quote(string value) => "\"" + value.Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
 }
