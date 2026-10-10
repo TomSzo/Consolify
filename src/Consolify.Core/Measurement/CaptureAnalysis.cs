@@ -5,7 +5,7 @@ namespace Consolify.Core.Measurement;
 
 /// <summary>The analysed capture of one game.</summary>
 /// <param name="Application">The game's executable name.</param>
-/// <param name="Render">Frame times as the game produced them (between presents). Decisions use these.</param>
+/// <param name="Render">Frame times as the game produced them (between presents), the whole capture.</param>
 /// <param name="Display">Frame times as they reached the screen, when PresentMon tracked the display.</param>
 /// <param name="DroppedFrames">Frames that never reached the screen.</param>
 /// <param name="GeneratedFrames">Frames made by frame generation rather than rendered by the game.</param>
@@ -20,7 +20,8 @@ public sealed record CaptureResult(
     int GeneratedFrames,
     IReadOnlyList<string> PresentModes,
     double? MedianGpuBusyMs = null,
-    double? MedianCpuBusyMs = null)
+    double? MedianCpuBusyMs = null,
+    HitchAnalysis? Hitches = null)
 {
     /// <summary>Which part of the machine holds the frame rate back.</summary>
     public BottleneckKind Bottleneck => Measurement.Bottleneck.Classify(Render.MedianMs, MedianGpuBusyMs);
@@ -70,6 +71,8 @@ public static class CaptureAnalysis
         }
 
         var render = FrameTimeStats.From(gameFrames.Select(f => f.MsBetweenPresents));
+        var hitches = HitchAnalysis.Analyze(gameFrames.Select(f => f.MsBetweenPresents).ToList());
+
 
         var displayTimes = gameFrames
             .Where(f => f.Displayed && f.MsBetweenDisplayChange is > 0)
@@ -92,7 +95,8 @@ public static class CaptureAnalysis
             GeneratedFrames: gameFrames.Count(f => f.IsGenerated),
             PresentModes: modes,
             MedianGpuBusyMs: Median(gameFrames.Select(f => f.MsGpuBusy)),
-            MedianCpuBusyMs: Median(gameFrames.Select(f => f.MsCpuBusy)));
+            MedianCpuBusyMs: Median(gameFrames.Select(f => f.MsCpuBusy)),
+            Hitches: hitches);
     }
 
     private static double? Median(IEnumerable<double?> values)

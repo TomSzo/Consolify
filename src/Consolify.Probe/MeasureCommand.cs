@@ -110,7 +110,20 @@ internal static class MeasureCommand
         Line("1% low", $"{r.OnePercentLowFps:0.0} FPS  (99th percentile frame time {r.P99Ms:0.0} ms)");
         Line("0.1% low", $"{r.PointOnePercentLowFps:0.0} FPS  (worst frame {r.MaxMs:0.0} ms)");
         Line("Median frame time", $"{r.MedianMs:0.00} ms");
-        Line("Hitches", $"{r.SpikeEventCount} ({r.SpikeCount} slow frames >= {FrameTimeStats.SpikeFactor:0}x median), {r.SpikeEventsPerMinute:0.0} per minute");
+        var hitch = result.Hitches;
+        if (hitch is not null)
+        {
+            Line("Steady play", hitch.Steady is not { } st
+                ? "none"
+                : $"{hitch.SteadyShare:P0} of the capture, 1% low {st.OnePercentLowFps:0.0} FPS (median {1000 / st.MedianMs:0.0} FPS)");
+            Line("Hitches", hitch.Hitches.Count == 0
+                ? "none"
+                : $"{hitch.Hitches.Count} ({hitch.Hitches.Sum(x => x.SlowFrames)} slow frames)");
+            foreach (var x in hitch.Hitches.OrderByDescending(x => x.WorstMs).Take(5).OrderBy(x => x.StartSeconds))
+            {
+                Line(string.Empty, $"at {x.StartSeconds:0.0}-{x.EndSeconds:0.0} s: {x.SlowFrames} slow frame(s), worst {x.WorstMs:0} ms");
+            }
+        }
         Line("Pacing (p95 change)", $"{r.PacingP95Ms:0.00} ms between consecutive frames");
         if (result.Display is { } shown)
         {
@@ -157,17 +170,27 @@ internal static class MeasureCommand
             Line(string.Empty, "not what the game can do. Remove the limiter and measure again.");
         }
 
-        if (r.SpikeEventsPerMinute > StutterEventsPerMinute)
+        if (hitch?.Steady is not { } steady || !hitch.EnoughSteadyPlay)
         {
-            Line("Stutter", "The game itself hitches often (shader compilation, streaming).");
-            Line(string.Empty, "Lowering image quality will not fix that.");
-        }
-        else if (r.SpikeEventCount > 0)
-        {
-            Line("Hitches", $"{r.SpikeEventCount} isolated hitch(es), e.g. scene changes or loading. Not a settings problem.");
+            Line("Not decided", "Too much of the capture is hitching (loading, streaming, menus).");
+            Line(string.Empty, "Measure again during normal play.");
+            Line("Capture file", csvPath);
+            return 0;
         }
 
-        var target = FrameTargetPolicy.Decide(r.OnePercentLowFps, vrr, refresh);
+        double perMinute = r.DurationSeconds > 0 ? hitch.Hitches.Count / r.DurationSeconds * 60 : 0;
+        if (perMinute > StutterEventsPerMinute)
+        {
+            Line("Stutter", "The game itself hitches often (shader compilation, streaming).");
+            Line(string.Empty, "Lowering image quality will not fix that, so the cap below ignores it.");
+        }
+        else if (hitch.Hitches.Count > 0)
+        {
+            Line("Hitches", "Isolated (scene changes, loading). Not a settings problem; left out of the decision.");
+        }
+
+        double steadyLow = steady.OnePercentLowFps;
+        var target = FrameTargetPolicy.Decide(steadyLow, vrr, refresh);
         string verdict = target.Tier switch
         {
             ExperienceTier.Full => $"FULL EXPERIENCE - cap at {target.CapFps} FPS",
@@ -175,7 +198,7 @@ internal static class MeasureCommand
             _ => "NOT ENOUGH - not even a locked 40 holds at these settings",
         };
         Line("Result", verdict);
-        Line("Rule", $"needs an uncapped 1% low of {target.RequiredOnePercentLow} FPS; measured {r.OnePercentLowFps:0.0}");
+        Line("Rule", $"needs an uncapped steady 1% low of {target.RequiredOnePercentLow} FPS; measured {steadyLow:0.0}");
         if (target.Tier != ExperienceTier.Full)
         {
             Line("What now", result.Bottleneck switch

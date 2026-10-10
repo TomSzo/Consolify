@@ -186,3 +186,37 @@ public class HitchAndBottleneckTests
         Assert.Equal(BottleneckKind.Gpu, result.Bottleneck);
     }
 }
+
+public class HitchAnalysisTests
+{
+    [Fact]
+    public void Loading_burst_is_left_out_of_steady_play()
+    {
+        var times = new List<double>();
+        times.AddRange(Enumerable.Repeat(15.0, 600));                              // 9 s steady
+        for (int i = 0; i < 20; i++) { times.Add(8); times.Add(8); times.Add(250); } // loading burst
+        times.AddRange(Enumerable.Repeat(15.0, 600));
+        var a = HitchAnalysis.Analyze(times);
+        Assert.Single(a.Hitches);
+        Assert.Equal(15.0, a.Steady!.P99Ms);
+        Assert.True(a.EnoughSteadyPlay);
+    }
+
+    [Fact]
+    public void Gradually_heavier_scene_is_steady_play_not_a_hitch()
+    {
+        var times = Enumerable.Range(0, 1200).Select(i => 15.0 + i * 0.015).ToList(); // 15 -> 33 ms
+        var a = HitchAnalysis.Analyze(times);
+        Assert.Empty(a.Hitches);
+        Assert.Equal(1.0, a.SteadyShare, 3);
+    }
+
+    [Fact]
+    public void Mostly_hitching_capture_is_not_enough()
+    {
+        var times = new List<double>();
+        for (int i = 0; i < 200; i++) { times.AddRange(Enumerable.Repeat(10.0, 10)); times.Add(100); }
+        var a = HitchAnalysis.Analyze(times);
+        Assert.False(a.EnoughSteadyPlay);
+    }
+}
