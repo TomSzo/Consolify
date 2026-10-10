@@ -186,7 +186,7 @@ internal static class MeasureCommand
         }
         else if (hitch.Hitches.Count > 0)
         {
-            Line("Hitches", "Isolated (scene changes, loading). Not a settings problem; left out of the decision.");
+            Line("Note", "Hitches are isolated (scene changes, loading): not a settings problem, left out of the decision.");
         }
 
         double steadyLow = steady.OnePercentLowFps;

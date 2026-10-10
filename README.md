@@ -52,11 +52,11 @@ The knowledge — which settings work for which game, on which hardware, on whic
 ## How it decides
 
 Consolify tunes the image so the game averages about 60 FPS **without** a frame cap, measures the
-1% low, and then caps the frame rate one frame below it. The game finishes almost every frame before
+1% low of steady play, and then caps the frame rate one frame below it. The game finishes almost every frame before
 the cap's deadline, so frame times become a flat line — perfectly smooth with VRR. Any headroom goes
 into image quality, never below console level.
 
-| Tier | Condition (uncapped 1% low) | Frame cap | Example |
+| Tier | Condition (uncapped steady 1% low) | Frame cap | Example |
 |---|---|---|---|
 | Full experience, with VRR | ≥ VRR minimum + 1, and at least 41 | 1% low − 1, at most 60 | 48–120 Hz panel: 49 · 40–120 Hz TV: 41 |
 | Full experience, without VRR | ≥ 61 | 60 | 60 or 120 Hz display |
@@ -77,14 +77,25 @@ while the game stutters — so the average is informational only. Decisions are 
 
 | Metric | What it shows | Role |
 |---|---|---|
-| 1% low (99th percentile frame time) | 99% of frames finish within this time | **main condition** |
+| 1% low of steady play (99th percentile frame time) | 99% of frames finish within this time | **main condition** |
 | Missed refreshes (without VRR) | what the eye sees on a fixed-refresh display | **main condition without VRR** |
-| 0.1% low and spike count (≥ 2× the median) | one-off hitches: shader compilation, loading | stutter warning |
+| Hitches (frames ≥ 2× slower than the second before) | shader compilation, streaming, loading | reported separately, stutter warning |
+| GPU busy share of the frame time | whether the GPU or the CPU holds the frame rate back | tells what can help |
 | Change between consecutive frames | frame pacing | pacing warning |
 | Average FPS | how many frames arrive in total | informational only |
 
-If a game is full of spikes, Consolify does not lower the image quality — it tells the player the game
-itself stutters. Spike and pacing thresholds are starting values, to be tuned with real measurements.
+**Stutter never costs image quality either.** Hitches are the game's fault, and lowering the image
+quality does not fix them. So Consolify groups slow frames that come less than a second apart into one
+hitch, leaves each hitch (plus half a second around it) out of the decision, and decides the cap from
+the steady play that remains. A gradually heavier scene is not a hitch: only sudden jumps against the
+second before count. The hitches are still listed with their time and worst frame, and a game that
+hitches often is called out as stuttery. If less than 60% of a capture is steady play, Consolify does
+not decide and asks for a new capture. These thresholds are starting values, to be tuned with real
+measurements.
+
+When the full experience is out of reach, the GPU busy share tells the player what could help: if the
+GPU is the limit, lighter graphics settings; if the CPU is, lowering the resolution will not help. Once
+the settings are at their lowest, the honest answer is that the hardware is the limit for this game.
 
 **Latency never costs image quality.** A desk player with a mouse feels latency more than a couch player
 with a controller — but a faster, uglier picture would break the experience Consolify exists for. The
@@ -115,7 +126,7 @@ A 24" 1080p monitor at 60 cm is ~40 PPD: it needs a much higher internal resolut
   - **Hardware adapters:** AMD (ADLX), NVIDIA (NVAPI), Intel (IGCL), handheld TDP
   - **Upscaler layer:** in-game upscalers, OptiScaler, Windows Auto SR, frame generation
   - **Engine modules:** Unreal Engine 5 first, then UE4 and others
-- **Measurement** — [PresentMon](https://github.com/GameTechDev/PresentMon): average, 1% low, 0.1% low, missed vblanks.
+- **Measurement** — [PresentMon](https://github.com/GameTechDev/PresentMon): frame times, steady-play 1% low, hitches, GPU/CPU bottleneck.
 - **Community profiles** — game profiles as YAML files plus opt-in, anonymous measurements.
 
 **Stack:** C# / .NET 8. Third-party tools (OptiScaler, PresentMon) are downloaded from their official
@@ -125,13 +136,30 @@ releases with pinned versions and checksums — never bundled.
 
 1. **System fix-up** — useful in every game on day one: VRR, frame cap, V-Sync, display detection,
    plain-language explanations, one-click restore.
-2. **Measurement** — PresentMon integration and evaluation against the rules above.
+2. **Measurement** — PresentMon integration and evaluation against the rules above. *Working in the probe.*
 3. **Unreal Engine 5 module** — one module, many games.
 4. **Hardware adapters** — AMD first, then NVIDIA and Intel.
 5. **Community profile repository** and measurement submissions.
 6. **More engines** — driven by community demand.
 
 First test platform: ROG Xbox Ally X (AMD Ryzen AI Z2 Extreme, 1080p 120 Hz VRR), handheld and docked.
+
+## Try the probe
+
+`consolify-probe` shows what Consolify detects and decides. It only reads and measures; it changes nothing.
+
+```
+consolify-probe                         display report: VRR range, TV or monitor, pixels per degree
+consolify-probe measure --app Game.exe  record 60 s with PresentMon (asks for admin rights) and decide
+consolify-probe analyze capture.csv     decide from an existing PresentMon capture
+```
+
+First results on the ROG Xbox Ally X, docked to an LG TV with a 40–120 Hz VRR window:
+
+| Game | Settings | Steady 1% low | Decision |
+|---|---|---|---|
+| Control | FSR 4 Performance (via OptiScaler) | 51.9 FPS | full experience, cap at 50 FPS |
+| Gears of War: E-Day | everything Low, FSR 4 Ultra Performance | 36.3 FPS | not enough — GPU-bound at the lowest settings |
 
 ## Contributing
 
