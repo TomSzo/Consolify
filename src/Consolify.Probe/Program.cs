@@ -8,6 +8,7 @@ using Consolify.Core.Display;
 using Consolify.Core.Pacing;
 using Consolify.Core.Viewing;
 using Consolify.Windows.Display;
+using Consolify.Windows.Measurement;
 
 // consolify-probe: prints what Consolify detects and measures. It changes nothing unless --apply is given.
 //
@@ -21,6 +22,8 @@ using Consolify.Windows.Display;
 //                                    analyse an existing PresentMon capture
 //   ... measure|analyze ... --apply [--yes] [--game-dir DIR]
 //                                    also write the frame cap to the game's OptiScaler.ini (after a backup)
+//   consolify-probe display set --size 83 [--distance 280] [--name "LG TV"]
+//                                    remember a display's real size and viewing distance
 //   consolify-probe restore --app Game.exe
 //                                    put back the last file Consolify changed for that game
 
@@ -41,13 +44,26 @@ if (args.Length > 0 && args[0].Equals("restore", StringComparison.OrdinalIgnoreC
     return MeasureCommand.Restore(args);
 }
 
+var store = new DisplaySettingsStore(Path.Combine(PresentMonRunner.DataDirectory, "displays.json"));
+
+if (args.Length > 1 && args[0].Equals("display", StringComparison.OrdinalIgnoreCase)
+    && args[1].Equals("set", StringComparison.OrdinalIgnoreCase))
+{
+    return SetDisplay(args, store);
+}
+
 bool json = args.Contains("--json", StringComparer.OrdinalIgnoreCase);
-double? distanceOverride = ReadDistance(args);
+double? distanceOverride = ReadDouble(args, "--distance");
 
 var displays = DisplayEnumerator.GetActiveDisplays();
 var settings = WindowsGraphicsSettings.ReadGlobalSettings();
 
-var reports = displays.Select(d => BuildReport(d, distanceOverride)).ToList();
+if (!json && !Console.IsInputRedirected)
+{
+    AskTvSizes(displays, store);
+}
+
+var reports = displays.Select(d => BuildReport(d, distanceOverride, store)).ToList();
 
 if (json)
 {
@@ -85,23 +101,101 @@ else
 
 return 0;
 
-static double? ReadDistance(string[] args)
+static double? ReadDouble(string[] args, string name)
 {
-    int index = Array.FindIndex(args, a => a.Equals("--distance", StringComparison.OrdinalIgnoreCase));
+    int index = Array.FindIndex(args, a => a.Equals(name, StringComparison.OrdinalIgnoreCase));
     return index >= 0 && index + 1 < args.Length
-        && double.TryParse(args[index + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out double cm) && cm > 0
-        ? cm
+        && double.TryParse(args[index + 1].Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out double v) && v > 0
+        ? v
         : null;
 }
 
-static DisplayReport BuildReport(ConnectedDisplay display, double? distanceOverride)
+static int SetDisplay(string[] args, DisplaySettingsStore store)
+{
+    double? size = ReadDouble(args, "--size");
+    double? distance = ReadDouble(args, "--distance");
+    int nameIndex = Array.FindIndex(args, a => a.Equals("--name", StringComparison.OrdinalIgnoreCase));
+    string? name = nameIndex >= 0 && nameIndex + 1 < args.Length ? args[nameIndex + 1] : null;
+
+    if (size is null && distance is null)
+    {
+        Console.Error.WriteLine("Usage: consolify-probe display set --size <inches> [--distance <cm>] [--name <part of the display name>]");
+        return 2;
+    }
+
+    var candidates = DisplayEnumerator.GetActiveDisplays().Where(d => d.Edid is not null).ToList();
+    var display = name is not null
+        ? candidates.FirstOrDefault(d => d.FriendlyName.Contains(name, StringComparison.OrdinalIgnoreCase))
+        : candidates.OrderByDescending(d => d.IsPrimary).FirstOrDefault();
+    if (display?.Edid is not { } edid)
+    {
+        Console.Error.WriteLine(name is null ? "No display with an EDID found." : $"No display named like \"{name}\".");
+        return 1;
+    }
+
+    store.Set(DisplaySettingsStore.KeyFor(edid.ManufacturerId, edid.ProductCode), new DisplaySettings(size, distance));
+    Console.WriteLine($"Remembered for {display.FriendlyName}: "
+        + string.Join(", ", new[] { size is null ? null : $"{size}\" screen", distance is null ? null : $"{distance} cm away" }.OfType<string>()));
+    return 0;
+}
+
+static void AskTvSizes(IReadOnlyList<ConnectedDisplay> displays, DisplaySettingsStore store)
+{
+    foreach (var display in displays)
+    {
+        if (display.Kind != DisplayKind.Television || display.Edid is not { } edid)
+        {
+            continue;
+        }
+
+        string key = DisplaySettingsStore.KeyFor(edid.ManufacturerId, edid.ProductCode);
+        if (store.Get(key).DiagonalInches is not null)
+        {
+            continue;
+        }
+
+        string guess = edid.DiagonalInches is double d ? $" (the TV reports {d:0}\", which is often wrong)" : string.Empty;
+        Console.Write($"How big is your TV \"{display.FriendlyName}\" in inches{guess}? ");
+        if (double.TryParse(Console.ReadLine()?.Trim().Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out double inches)
+            && inches is > 10 and < 200)
+        {
+            store.Set(key, new DisplaySettings(DiagonalInches: inches));
+        }
+    }
+}
+
+static DisplayReport BuildReport(ConnectedDisplay display, double? distanceOverride, DisplaySettingsStore store)
 {
     var edid = display.Edid;
     int refresh = (int)Math.Round(display.RefreshHz);
     var vrr = edid?.GetEffectiveVrrRange(refresh);
+    var told = edid is null ? new DisplaySettings() : store.Get(DisplaySettingsStore.KeyFor(edid.ManufacturerId, edid.ProductCode));
 
-    double? widthCm = edid is { WidthCm: > 0 } ? edid.WidthCm : null;
-    double distance = distanceOverride ?? ViewingGeometry.DefaultDistanceCm(display.Kind, edid?.DiagonalInches);
+    double? diagonal;
+    ValueSource sizeSource;
+    double? widthCm;
+    if (told.DiagonalInches is double inches && display.Width > 0 && display.Height > 0)
+    {
+        diagonal = inches;
+        sizeSource = ValueSource.Player;
+        widthCm = ViewingGeometry.WidthFromDiagonalCm(inches, display.Width, display.Height);
+    }
+    else if (edid is { WidthCm: > 0 })
+    {
+        diagonal = edid.DiagonalInches;
+        sizeSource = ValueSource.Edid;
+        widthCm = edid.WidthCm;
+    }
+    else
+    {
+        diagonal = null;
+        sizeSource = ValueSource.Unknown;
+        widthCm = null;
+    }
+
+    var (distance, distanceSource) = distanceOverride is double o ? (o, ValueSource.Player)
+        : told.DistanceCm is double t ? (t, ValueSource.Player)
+        : (ViewingGeometry.DefaultDistanceCm(display.Kind, diagonal), ValueSource.Default);
     double? ppd = widthCm is not null && display.Width > 0
         ? ViewingGeometry.PixelsPerDegree(display.Width, widthCm.Value, distance)
         : null;
@@ -117,7 +211,9 @@ static DisplayReport BuildReport(ConnectedDisplay display, double? distanceOverr
         ProductCode: edid is null ? null : $"0x{edid.ProductCode:X4}",
         EdidVersion: edid?.EdidVersion.ToString(),
         SizeCm: edid is { WidthCm: > 0 } ? $"{edid.WidthCm}x{edid.HeightCm}" : null,
-        DiagonalInches: edid?.DiagonalInches is double d ? Math.Round(d, 1) : null,
+        DiagonalInches: diagonal is double d ? Math.Round(d, 1) : null,
+        SizeSource: sizeSource,
+        SizeNeedsAsking: sizeSource != ValueSource.Player && !DisplaySettingsStore.EdidSizeTrusted(display.Kind),
         HdmiSink: edid?.HasHdmiBlock,
         Allm: edid?.SupportsAllm,
         VrrRangesFound: edid?.VrrRanges.Select(r => $"{r.MinHz}-{(r.MaxHz == 0 ? "?" : r.MaxHz)} Hz ({r.Source})").ToList(),
@@ -126,6 +222,7 @@ static DisplayReport BuildReport(ConnectedDisplay display, double? distanceOverr
         FullExperienceFloor: FrameTargetPolicy.FullExperienceFloor(vrr),
         Locked40Fallback: FrameTargetPolicy.CanShowLocked40(vrr, refresh),
         AssumedDistanceCm: distance,
+        DistanceSource: distanceSource,
         PixelsPerDegree: ppd is double p ? Math.Round(p, 1) : null,
         UpscaleCeiling: ppd is double q ? ViewingGeometry.CeilingFor(q) : null,
         EdidWarnings: edid?.Warnings.Count > 0 ? edid.Warnings : null,
@@ -141,7 +238,17 @@ static void PrintReport(DisplayReport r)
     Line("EDID", r.EdidError is not null
         ? $"unavailable - {r.EdidError}"
         : $"{r.Manufacturer} {r.ProductCode}, version {r.EdidVersion}");
-    Line("Physical size", r.SizeCm is null ? "unknown" : $"{r.SizeCm} cm ({r.DiagonalInches}\")");
+    Line("Screen size", r.SizeSource switch
+    {
+        ValueSource.Player => $"{r.DiagonalInches}\" (you told me)",
+        ValueSource.Edid => $"{r.DiagonalInches}\" ({r.SizeCm} cm, from EDID{(r.SizeNeedsAsking ? " - TVs often report this wrong" : string.Empty)})",
+        _ => "unknown",
+    });
+    if (r.SizeNeedsAsking)
+    {
+        Line(string.Empty, "Tell me the real size: consolify-probe display set --size <inches>");
+    }
+
     Line("HDMI sink / ALLM", $"{Yes(r.HdmiSink)} / {Yes(r.Allm)}");
 
     if (r.VrrRangesFound is { Count: > 0 })
@@ -162,7 +269,9 @@ static void PrintReport(DisplayReport r)
     Line("Full experience", $"uncapped 1% low >= {r.FullExperienceFloor} FPS, cap 1 FPS below it (max 60)");
     Line("Locked 40 fallback", r.Locked40Fallback ? "possible (shown as a compromise)" : "not possible on this display");
 
-    Line("Viewing distance", $"{r.AssumedDistanceCm} cm (assumed; override with --distance)");
+    Line("Viewing distance", r.DistanceSource == ValueSource.Player
+        ? $"{r.AssumedDistanceCm} cm (you told me)"
+        : $"{r.AssumedDistanceCm} cm (assumed; set with: consolify-probe display set --distance <cm>)");
     Line("Pixels per degree", r.PixelsPerDegree is null ? "unknown (no physical size)" : $"{r.PixelsPerDegree} -> upscale ceiling: {r.UpscaleCeiling}");
 
     foreach (var warning in r.EdidWarnings ?? [])
@@ -188,6 +297,8 @@ internal sealed record DisplayReport(
     string? EdidVersion,
     string? SizeCm,
     double? DiagonalInches,
+    ValueSource SizeSource,
+    bool SizeNeedsAsking,
     bool? HdmiSink,
     bool? Allm,
     IReadOnlyList<string>? VrrRangesFound,
@@ -196,6 +307,7 @@ internal sealed record DisplayReport(
     int FullExperienceFloor,
     bool Locked40Fallback,
     double AssumedDistanceCm,
+    ValueSource DistanceSource,
     double? PixelsPerDegree,
     UpscaleCeiling? UpscaleCeiling,
     IReadOnlyList<string>? EdidWarnings,
