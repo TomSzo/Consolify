@@ -146,12 +146,17 @@ First test platform: ROG Xbox Ally X (AMD Ryzen AI Z2 Extreme, 1080p 120 Hz VRR)
 
 ## Try the probe
 
-`consolify-probe` shows what Consolify detects and decides. It only reads and measures; it changes nothing.
+`consolify-probe` shows what Consolify detects and decides. It reads and measures, and changes a file only
+with `--apply`, after a backup. Download `consolify-probe.exe` from the
+[latest release](https://github.com/TomSzo/Consolify/releases/latest): one file, no install, no .NET needed.
 
 ```
 consolify-probe                         display report: VRR range, TV or monitor, pixels per degree
 consolify-probe measure --app Game.exe  record 60 s with PresentMon (asks for admin rights) and decide
 consolify-probe analyze capture.csv     decide from an existing PresentMon capture
+consolify-probe measure --app Game.exe --apply   ...and write the cap to the game's OptiScaler.ini
+consolify-probe restore --app Game.exe  put back the file as it was before --apply
+consolify-probe display set --size 83   tell the real TV size (TVs often report a wrong one)
 ```
 
 First results on the ROG Xbox Ally X, docked to an LG TV with a 40–120 Hz VRR window:
