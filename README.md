@@ -2,8 +2,11 @@
 
 **A console-like experience on any PC — decided for you, not by a wall of settings.**
 
-> **Status: pre-alpha.** There is no usable build yet. This repository holds the project's
-> manifesto and design, and is open for discussion and contributors.
+> **Status: paused.** Development is on hold for now; there is no active work and no release
+> schedule. The code, the design and the measuring probe stay here as they are, and the project
+> may pick up again later. Issues and discussion are still welcome, but replies may be slow.
+>
+> The project is pre-alpha: the probe works, but there is no complete Consolify build yet.
 
 ---
 
