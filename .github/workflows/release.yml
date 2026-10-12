@@ -1,6 +1,6 @@
 name: Release
 
-# Push a tag such as v0.1.0 to build the probe as one self-contained exe and publish it as a release.
+# Push a tag such as v0.1.0 (or publish a release with a new v* tag on the website) to build the probe as one self-contained exe and publish it as a release.
 on:
   push:
     tags: ['v*']
@@ -32,6 +32,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create '${{ github.ref_name }}' publish/consolify-probe.exe publish/consolify-probe.exe.sha256 `
-            --title 'Consolify probe ${{ github.ref_name }}' `
-            --notes "Self-contained Windows x64 build of consolify-probe: no .NET or other install needed. Check the download against consolify-probe.exe.sha256. It reads and measures; it changes files only with --apply, after a backup."
+          $tag = '${{ github.ref_name }}'
+          $files = 'publish/consolify-probe.exe', 'publish/consolify-probe.exe.sha256'
+          # A release made on the GitHub website creates the tag first, so the release may already exist.
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag @files --clobber
+          } else {
+            gh release create $tag @files `
+              --title "Consolify probe $tag" `
+              --notes "Self-contained Windows x64 build of consolify-probe: no .NET or other install needed. Check the download against consolify-probe.exe.sha256. It reads and measures; it changes files only with --apply, after a backup."
+          }
+          exit $LASTEXITCODE
